@@ -327,7 +327,7 @@ export function ArticleComposer() {
     if (mode === "numbers") {
       document.execCommand("insertOrderedList");
       const selection = window.getSelection();
-      const element = getElementFromNode(selection?.anchorNode);
+      const element = getElementFromNode(selection?.anchorNode ?? null);
       const ordered = element?.closest("ol") as HTMLOListElement | null;
       if (ordered) {
         ordered.style.listStyleType = "decimal";
@@ -338,7 +338,7 @@ export function ArticleComposer() {
 
     document.execCommand("insertUnorderedList");
     const selection = window.getSelection();
-    const element = getElementFromNode(selection?.anchorNode);
+    const element = getElementFromNode(selection?.anchorNode ?? null);
     const list = element?.closest("ul") as HTMLUListElement | null;
     if (list) {
       list.style.listStyleType = mode === "points" ? "disc" : "square";
@@ -451,7 +451,7 @@ export function ArticleComposer() {
     }
 
     const selection = window.getSelection();
-    const element = getElementFromNode(selection?.anchorNode);
+    const element = getElementFromNode(selection?.anchorNode ?? null);
     const listItem = element?.closest("li");
 
     if (!listItem) {
