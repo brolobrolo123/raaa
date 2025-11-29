@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { PrismaClient } from "../src/generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import type { Locale } from "../src/lib/i18n/dictionaries";
 import { SECTION_DEFINITIONS } from "../src/lib/sections";
 
