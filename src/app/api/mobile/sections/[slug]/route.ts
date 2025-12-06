@@ -6,7 +6,7 @@ type RouteContext = {
   params: Promise<{ slug: string }>;
 };
 
-const VALID_VIEWS = new Set(["default", "top", "recent"]);
+const VALID_VIEWS = new Set(["top", "recent"]);
 
 type SnapshotArticle = Awaited<ReturnType<typeof getSectionSnapshot>> extends infer Snapshot
   ? Snapshot extends { topArticles: Array<infer ArticleType> }
@@ -48,8 +48,8 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const url = new URL(request.url);
-  const viewParam = url.searchParams.get("view") ?? "default";
-  const normalizedView = VALID_VIEWS.has(viewParam) ? (viewParam as "default" | "top" | "recent") : "default";
+  const viewParam = url.searchParams.get("view") ?? "top";
+  const normalizedView: "top" | "recent" = VALID_VIEWS.has(viewParam) ? (viewParam as "top" | "recent") : "top";
 
   const snapshot = await getSectionSnapshot({ slug: slug as SectionSlug, view: normalizedView });
   if (!snapshot) {

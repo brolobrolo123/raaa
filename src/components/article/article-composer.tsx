@@ -3,16 +3,25 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import type { z } from "zod";
 import { articleSchema } from "@/lib/validators";
-import { SECTION_DEFINITIONS, SECTION_SLUGS } from "@/lib/sections";
+import {
+  PRIMARY_SECTION_SLUGS,
+  SECTION_DEFINITIONS,
+  SECTION_SLUGS,
+  getSectionParentSlug,
+  getSectionTopics,
+  isPrimarySectionSlug,
+  type PrimarySectionSlug,
+  type SectionSlug,
+} from "@/lib/sections";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { sanitizeHtml } from "@/lib/sanitizer";
-import { useLocale } from "@/lib/i18n/client";
+import { useLocale, useTranslations } from "@/lib/i18n/client";
 import { FormMessage } from "../forms/form-message";
 import { Bold, Film, Image as ImageIcon, Italic, List, PaintBucket, Palette, Upload } from "lucide-react";
 
@@ -20,6 +29,8 @@ const colorPresets = ["#2563eb", "#0d9488", "#f97316", "#db2777", "#22d3ee", "#a
 const textColorPresets = ["#f8fafc", "#f97316", "#facc15", "#0ea5e9", "#22d3ee", "#a855f7", "#10b981", "#f472b6"];
 const GIPHY_KEY = (process.env.NEXT_PUBLIC_GIPHY_KEY ?? "dc6zaTOxFJmzC").trim();
 const MIN_CONTENT_CHARS = 100;
+const TITLE_MAX_CHARS = 12;
+const SUMMARY_MAX_CHARS = 30;
 
 const getPlainTextLength = (html: string) =>
   html
@@ -51,9 +62,10 @@ type GiphyApiResponse = {
 type ArticleValues = z.infer<typeof articleSchema>;
 type ColorInputElement = HTMLInputElement & { showPicker?: () => void };
 
-export function ArticleComposer() {
+export function ArticleComposer({ initialSectionSlug = null }: { initialSectionSlug?: SectionSlug | null }) {
   const router = useRouter();
   const locale = useLocale();
+  const t = useTranslations();
   const editorRef = useRef<HTMLDivElement>(null);
   const textPaletteRef = useRef<HTMLDivElement>(null);
   const listMenuRef = useRef<HTMLDivElement>(null);
@@ -70,13 +82,26 @@ export function ArticleComposer() {
   const [isListMenuOpen, setIsListMenuOpen] = useState(false);
   const [isGifPickerOpen, setIsGifPickerOpen] = useState(false);
   const [gifResults, setGifResults] = useState<GifResult[]>([]);
-  const [gifQuery, setGifQuery] = useState("conspiracion");
+  const [gifQuery, setGifQuery] = useState(() => (locale === "es" ? "conspiracion" : "conspiracy"));
   const [isGifLoading, setIsGifLoading] = useState(false);
   const [contentChars, setContentChars] = useState(0);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [coverUploadMessage, setCoverUploadMessage] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const textColorHistoryTimer = useRef<number | null>(null);
   const lastEmptyListItemRef = useRef<HTMLLIElement | null>(null);
+
+  const normalizedInitialSectionSlug = initialSectionSlug && (SECTION_SLUGS as string[]).includes(initialSectionSlug)
+    ? (initialSectionSlug as SectionSlug)
+    : undefined;
+  const derivedInitialPrimarySection: PrimarySectionSlug = normalizedInitialSectionSlug
+    ? isPrimarySectionSlug(normalizedInitialSectionSlug)
+      ? normalizedInitialSectionSlug
+      : getSectionParentSlug(normalizedInitialSectionSlug) ?? PRIMARY_SECTION_SLUGS[0]
+    : PRIMARY_SECTION_SLUGS[0];
+  const initialTopics = getSectionTopics(derivedInitialPrimarySection);
+  const derivedInitialTopic: SectionSlug = normalizedInitialSectionSlug && !isPrimarySectionSlug(normalizedInitialSectionSlug)
+    ? normalizedInitialSectionSlug
+    : initialTopics[0] ?? derivedInitialPrimarySection;
 
   const {
     register,
@@ -89,12 +114,34 @@ export function ArticleComposer() {
     defaultValues: {
       title: "",
       summary: "",
-      section: SECTION_SLUGS[0],
+      section: derivedInitialTopic,
       content: "",
       coverColor: colorPresets[0],
       coverImage: null,
     },
   });
+
+  const [selectedPrimarySection, setSelectedPrimarySection] = useState<PrimarySectionSlug>(
+    derivedInitialPrimarySection,
+  );
+  const [selectedTopic, setSelectedTopic] = useState<SectionSlug>(derivedInitialTopic);
+  const activeTopics = useMemo(() => getSectionTopics(selectedPrimarySection), [selectedPrimarySection]);
+
+  useEffect(() => {
+    if (activeTopics.length === 0) {
+      if (selectedTopic !== selectedPrimarySection) {
+        setSelectedTopic(selectedPrimarySection);
+      }
+      return;
+    }
+    if (!activeTopics.includes(selectedTopic)) {
+      setSelectedTopic(activeTopics[0]);
+    }
+  }, [activeTopics, selectedPrimarySection, selectedTopic]);
+
+  useEffect(() => {
+    setValue("section", selectedTopic, { shouldValidate: true });
+  }, [selectedTopic, setValue]);
 
   const selectedColor = useWatch({ control, name: "coverColor" });
   const titleValue = useWatch({ control, name: "title" }) ?? "";
@@ -175,11 +222,11 @@ export function ArticleComposer() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [isGifPickerOpen]);
 
-  const fetchGifs = async (query: string) => {
+  const fetchGifs = useCallback(async (query: string) => {
     setIsGifLoading(true);
     try {
       const response = await fetch(
-        `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=12&rating=g&lang=es`,
+        `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=12&rating=g&lang=${locale}`,
       );
       const data = (await response.json()) as GiphyApiResponse;
       const parsed: GifResult[] = (data.data ?? []).map((item) => ({
@@ -189,18 +236,18 @@ export function ArticleComposer() {
       }));
       setGifResults(parsed.filter((gif) => gif.fullUrl));
     } catch (error) {
-      console.error("Error al buscar GIFs", error);
+      console.error("Error fetching GIFs", error);
       setGifResults([]);
     } finally {
       setIsGifLoading(false);
     }
-  };
+  }, [locale]);
 
   useEffect(() => {
     if (isGifPickerOpen && gifResults.length === 0) {
       void fetchGifs(gifQuery);
     }
-  }, [gifResults.length, gifQuery, isGifPickerOpen]);
+  }, [fetchGifs, gifResults.length, gifQuery, isGifPickerOpen]);
 
   const exec = (command: string, value?: string) => {
     editorRef.current?.focus();
@@ -246,6 +293,8 @@ export function ArticleComposer() {
     if (!file) return;
     setCoverUploadMessage(null);
     setIsCoverUploading(true);
+    const uploadErrorMessage = t("newArticlePage.form.cover.uploadError");
+    const uploadSuccessMessage = t("newArticlePage.form.cover.uploadSuccess");
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -255,12 +304,12 @@ export function ArticleComposer() {
       });
       const data = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (!response.ok || !data?.url) {
-        throw new Error(data?.error ?? "No se pudo subir la portada.");
+        throw new Error(data?.error ?? uploadErrorMessage);
       }
       setValue("coverImage", data.url, { shouldValidate: true });
-      setCoverUploadMessage({ text: "Portada cargada con éxito.", tone: "success" });
+      setCoverUploadMessage({ text: uploadSuccessMessage, tone: "success" });
     } catch (error) {
-      const fallback = error instanceof Error ? error.message : "No se pudo subir la portada.";
+      const fallback = error instanceof Error ? error.message : uploadErrorMessage;
       setCoverUploadMessage({ text: fallback, tone: "error" });
     } finally {
       setIsCoverUploading(false);
@@ -409,7 +458,7 @@ export function ArticleComposer() {
     const plainTextLength = getPlainTextLength(cleanHtml);
     if (plainTextLength < MIN_CONTENT_CHARS) {
       setIsError(true);
-      setMessage("Necesitas al menos 100 caracteres de contenido real.");
+      setMessage(t("newArticlePage.form.errors.contentMin").replace("{count}", String(MIN_CONTENT_CHARS)));
       return;
     }
 
@@ -422,13 +471,17 @@ export function ArticleComposer() {
     if (!response.ok) {
       const data = await response.json().catch(() => null);
       setIsError(true);
-      setMessage(data?.error ?? "No se pudo publicar el artículo.");
+      setMessage(data?.error ?? t("newArticlePage.form.errors.publishFailed"));
       return;
     }
 
     const data = await response.json();
-    setMessage("Publicado. Redirigiendo...");
-    router.push(`/articles/${data.id}`);
+    setMessage(t("newArticlePage.form.status.success"));
+    if (typeof window !== "undefined") {
+      window.location.href = `/articles/${data.id}`;
+    } else {
+      router.push(`/articles/${data.id}`);
+    }
   };
 
   const syncEditorState = (options?: { preserveEmptyMarker?: boolean }) => {
@@ -482,41 +535,66 @@ export function ArticleComposer() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 text-white">
       <div className="grid gap-3">
-        <label className="text-sm uppercase tracking-wide text-slate-300">Título</label>
-        <Input placeholder="Ej. Y si el imperio nunca cayó" maxLength={12} {...register("title")} />
+        <label className="text-sm uppercase tracking-wide text-slate-300">{t("newArticlePage.form.titleLabel")}</label>
+        <Input
+          placeholder={t("newArticlePage.form.titlePlaceholder")}
+          maxLength={TITLE_MAX_CHARS}
+          {...register("title")}
+        />
         <div className="flex items-center justify-between text-xs text-slate-400">
-          <span>Máximo 12 caracteres</span>
-          <span>{titleValue.length}/12</span>
+          <span>{t("newArticlePage.form.titleHint").replace("{max}", String(TITLE_MAX_CHARS))}</span>
+          <span>
+            {titleValue.length}/{TITLE_MAX_CHARS}
+          </span>
         </div>
         {errors.title && <p className="text-xs text-rose-200">{errors.title.message}</p>}
       </div>
       <div className="grid gap-3">
-        <label className="text-sm uppercase tracking-wide text-slate-300">Resumen corto</label>
+        <label className="text-sm uppercase tracking-wide text-slate-300">{t("newArticlePage.form.summaryLabel")}</label>
         <Textarea
           rows={2}
-          maxLength={30}
-          placeholder="Máximo 30 caracteres"
+          maxLength={SUMMARY_MAX_CHARS}
+          placeholder={t("newArticlePage.form.summaryPlaceholder").replace(
+            "{max}",
+            String(SUMMARY_MAX_CHARS),
+          )}
           {...register("summary")}
         />
         {errors.summary && <p className="text-xs text-rose-200">{errors.summary.message}</p>}
       </div>
       <div className="grid gap-3">
-        <label className="text-sm uppercase tracking-wide text-slate-300">Sección</label>
+        <label className="text-sm uppercase tracking-wide text-slate-300">{t("newArticlePage.form.clubLabel")}</label>
         <select
+          value={selectedPrimarySection}
+          onChange={(event) => setSelectedPrimarySection(event.target.value as PrimarySectionSlug)}
           className="rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white"
-          {...register("section")}
         >
-          {SECTION_SLUGS.map((slug) => (
+          {PRIMARY_SECTION_SLUGS.map((slug) => (
             <option key={slug} value={slug} className="bg-slate-900 text-white">
               {SECTION_DEFINITIONS[slug].name[locale]}
             </option>
           ))}
         </select>
       </div>
+      <div className="grid gap-3">
+        <label className="text-sm uppercase tracking-wide text-slate-300">{t("newArticlePage.form.topicsLabel")}</label>
+        <select
+          value={selectedTopic}
+          onChange={(event) => setSelectedTopic(event.target.value as SectionSlug)}
+          className="rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white"
+        >
+          {(activeTopics.length > 0 ? activeTopics : [selectedPrimarySection]).map((slug) => (
+            <option key={slug} value={slug} className="bg-slate-900 text-white">
+              {SECTION_DEFINITIONS[slug].name[locale]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <input type="hidden" {...register("section")} value={selectedTopic} readOnly />
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <label className="text-sm uppercase tracking-wide text-slate-300">Contenido</label>
+          <label className="text-sm uppercase tracking-wide text-slate-300">{t("newArticlePage.form.contentLabel")}</label>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <button
@@ -525,7 +603,7 @@ export function ArticleComposer() {
                 className="flex items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10"
               >
                 <PaintBucket className="h-5 w-5" />
-                <span>Color de portada</span>
+                <span>{t("newArticlePage.form.cover.colorLabel")}</span>
                 <span
                   className="h-5 w-5 rounded-full border border-white/30"
                   style={{ backgroundColor: selectedColor }}
@@ -549,7 +627,13 @@ export function ArticleComposer() {
               className="flex items-center gap-2 rounded-2xl border border-dashed border-white/25 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <ImageIcon className="h-5 w-5" />
-              <span>{isCoverUploading ? "Subiendo..." : coverImage ? "Cambiar portada" : "Subir portada"}</span>
+              <span>
+                {isCoverUploading
+                  ? t("newArticlePage.form.cover.uploading")
+                  : coverImage
+                    ? t("newArticlePage.form.cover.change")
+                    : t("newArticlePage.form.cover.upload")}
+              </span>
             </button>
             <input
               ref={coverImageInputRef}
@@ -567,24 +651,31 @@ export function ArticleComposer() {
         )}
         {coverImage && (
           <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-            <Image src={coverImage} alt="Portada seleccionada" width={180} height={110} className="h-24 w-40 rounded-2xl object-cover" />
+            <Image
+              src={coverImage}
+              alt={t("newArticlePage.form.cover.previewAlt")}
+              width={180}
+              height={110}
+              unoptimized
+              className="h-24 w-40 rounded-2xl object-cover"
+            />
             <div className="flex flex-1 flex-col gap-2 text-sm text-white/80">
-              <p>Mostraremos esta imagen como portada en tu artículo. Puedes cambiarla o volver al color en cualquier momento.</p>
+              <p>{t("newArticlePage.form.cover.previewDescription")}</p>
               <Button
                 type="button"
                 variant="ghost"
                 onClick={clearCoverImage}
                 className="w-fit border border-transparent text-rose-200 hover:border-rose-200/30 hover:bg-white/5"
               >
-                Quitar imagen
+                {t("newArticlePage.form.cover.clear")}
               </Button>
             </div>
           </div>
         )}
         <div className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/80">
           <div className="flex flex-wrap gap-2">
-            <ToolbarButton label="Negrita" icon={<Bold className="h-4 w-4" />} onClick={() => exec("bold")} />
-            <ToolbarButton label="Cursiva" icon={<Italic className="h-4 w-4" />} onClick={() => exec("italic")} />
+            <ToolbarButton label={t("newArticlePage.form.toolbar.bold")} icon={<Bold className="h-4 w-4" />} onClick={() => exec("bold")} />
+            <ToolbarButton label={t("newArticlePage.form.toolbar.italic")} icon={<Italic className="h-4 w-4" />} onClick={() => exec("italic")} />
             <div className="relative" ref={listMenuRef}>
               <button
                 type="button"
@@ -592,7 +683,7 @@ export function ArticleComposer() {
                 className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/10"
               >
                 <List className="h-4 w-4" />
-                <span>Viñetas</span>
+                <span>{t("newArticlePage.form.toolbar.bullets")}</span>
               </button>
               {isListMenuOpen && (
                 <div className="absolute left-0 top-full z-20 mt-3 w-48 rounded-2xl border border-white/15 bg-slate-900/95 p-2 text-sm text-white shadow-2xl backdrop-blur">
@@ -601,21 +692,21 @@ export function ArticleComposer() {
                     className="flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-white/80 transition hover:bg-white/10 hover:text-white"
                     onClick={() => applyList("points")}
                   >
-                    • Puntos
+                    {t("newArticlePage.form.toolbar.list.points")}
                   </button>
                   <button
                     type="button"
                     className="flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-white/80 transition hover:bg-white/10 hover:text-white"
                     onClick={() => applyList("numbers")}
                   >
-                    1. Números
+                    {t("newArticlePage.form.toolbar.list.numbers")}
                   </button>
                   <button
                     type="button"
                     className="flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-white/80 transition hover:bg-white/10 hover:text-white"
                     onClick={() => applyList("classic")}
                   >
-                    ■ Viñetas clásicas
+                    {t("newArticlePage.form.toolbar.list.classic")}
                   </button>
                 </div>
               )}
@@ -627,7 +718,7 @@ export function ArticleComposer() {
                 className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/10"
               >
                 <Palette className="h-4 w-4" />
-                <span>Color texto</span>
+                <span>{t("newArticlePage.form.toolbar.textColor")}</span>
                 <span
                   className="h-3 w-3 rounded-full border border-white/30"
                   style={{ backgroundColor: selectedTextColor }}
@@ -637,7 +728,7 @@ export function ArticleComposer() {
 
               {isTextPaletteOpen && (
                 <div className="absolute left-0 top-full z-20 mt-3 w-56 rounded-3xl border border-white/15 bg-slate-900/95 p-4 text-sm text-white shadow-2xl backdrop-blur">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Últimos usados</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">{t("newArticlePage.form.toolbar.recent")}</p>
                   <div className="mt-3 grid grid-cols-4 gap-2">
                     {(recentTextColors.length > 0 ? recentTextColors : textColorPresets).map((color) => (
                       <button
@@ -648,15 +739,15 @@ export function ArticleComposer() {
                         }`}
                         style={{ backgroundColor: color }}
                         onClick={() => applyTextColor(color, { trackHistory: true })}
-                        aria-label={`Aplicar ${color}`}
+                        aria-label={t("newArticlePage.form.textColor.apply").replace("{color}", color)}
                       />
                     ))}
                   </div>
                   {recentTextColors.length === 0 && (
-                    <p className="mt-2 text-[11px] text-white/50">Selecciona un color para empezar tu historial.</p>
+                    <p className="mt-2 text-[11px] text-white/50">{t("newArticlePage.form.toolbar.historyEmpty")}</p>
                   )}
                   <label className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 px-3 py-2 text-[11px] uppercase tracking-wide text-slate-300">
-                    Personaliza
+                    {t("newArticlePage.form.toolbar.customLabel")}
                     <input
                       type="color"
                       value={selectedTextColor}
@@ -670,14 +761,14 @@ export function ArticleComposer() {
           </div>
           <div className="relative" ref={gifPickerRef}>
             <div className="flex flex-wrap gap-2">
-              <ToolbarButton label="Imagen local" icon={<Upload className="h-4 w-4" />} onClick={handleLocalImageClick} />
-              <ToolbarButton label="GIFs" icon={<Film className="h-4 w-4" />} onClick={() => setIsGifPickerOpen((prev) => !prev)} />
+              <ToolbarButton label={t("newArticlePage.form.toolbar.localImage")} icon={<Upload className="h-4 w-4" />} onClick={handleLocalImageClick} />
+              <ToolbarButton label={t("newArticlePage.form.toolbar.gifs")} icon={<Film className="h-4 w-4" />} onClick={() => setIsGifPickerOpen((prev) => !prev)} />
             </div>
             {isGifPickerOpen && (
               <div className="absolute left-0 top-full z-30 mt-3 w-[min(420px,80vw)] rounded-3xl border border-white/15 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur">
-                <div role="search" aria-label="Buscar GIFs" className="flex items-center gap-2">
+                <div role="search" aria-label={t("newArticlePage.form.gifs.searchAria")} className="flex items-center gap-2">
                   <Input
-                    placeholder="Busca en Giphy"
+                    placeholder={t("newArticlePage.form.gifs.searchPlaceholder")}
                     value={gifQuery}
                     onChange={(event) => setGifQuery(event.target.value)}
                     onKeyDown={handleGifInputKeyDown}
@@ -689,11 +780,11 @@ export function ArticleComposer() {
                     className="border border-white/20 bg-white/10 text-white hover:bg-white/20"
                     onClick={triggerGifSearch}
                   >
-                    Buscar
+                    {t("newArticlePage.form.gifs.searchButton")}
                   </Button>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  {isGifLoading && <p className="col-span-3 text-center text-xs text-slate-300">Buscando GIFs...</p>}
+                  {isGifLoading && <p className="col-span-3 text-center text-xs text-slate-300">{t("newArticlePage.form.gifs.loading")}</p>}
                   {!isGifLoading &&
                     gifResults.map((gif) => (
                       <button
@@ -704,7 +795,7 @@ export function ArticleComposer() {
                       >
                         <Image
                           src={gif.previewUrl}
-                          alt="GIF"
+                          alt={t("newArticlePage.form.gifs.alt")}
                           width={160}
                           height={100}
                           className="h-24 w-full object-cover"
@@ -712,7 +803,7 @@ export function ArticleComposer() {
                       </button>
                     ))}
                   {!isGifLoading && gifResults.length === 0 && (
-                    <p className="col-span-3 text-center text-xs text-slate-300">No encontramos GIFs para esa palabra.</p>
+                    <p className="col-span-3 text-center text-xs text-slate-300">{t("newArticlePage.form.gifs.empty")}</p>
                   )}
                 </div>
               </div>
@@ -738,7 +829,9 @@ export function ArticleComposer() {
             contentChars < MIN_CONTENT_CHARS && isSubmitted ? "text-rose-200" : "text-slate-400"
           }`}
         >
-          {contentChars}/{MIN_CONTENT_CHARS} caracteres necesarios para publicar.
+          {t("newArticlePage.form.counter")
+            .replace("{current}", String(contentChars))
+            .replace("{min}", String(MIN_CONTENT_CHARS))}
         </p>
       </div>
 
@@ -746,7 +839,7 @@ export function ArticleComposer() {
       <input type="hidden" {...register("coverImage")} />
 
       <Button type="submit" loading={isSubmitting} className="w-full">
-        Publicar artículo
+        {t("newArticlePage.form.submit")}
       </Button>
     </form>
   );

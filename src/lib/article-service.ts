@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { CommentNodeDTO } from "@/types/content";
 import { prisma } from "./prisma";
-import type { SectionSlug } from "./sections";
+import { SECTION_DEFINITIONS, getSectionTopics, isPrimarySectionSlug, type SectionSlug } from "./sections";
 
 const articleSelect = {
   id: true,
@@ -73,63 +73,80 @@ async function attachTopComments(articles: ArticlePreview[]): Promise<ArticlePre
 export async function getSectionSnapshot({
   slug,
   page = 1,
-  view = "default",
+  view = "top",
 }: {
   slug: SectionSlug;
   page?: number;
-  view?: "default" | "top" | "recent";
+  view?: "top" | "recent";
 }) {
-  const section = await prisma.section.findFirst({ where: { slug } });
-  if (!section) {
-    return null;
-  }
-
+  const normalizedView: "top" | "recent" = view === "recent" ? "recent" : "top";
   const normalizedPage = Math.max(1, page);
-  const showTop = view !== "recent";
-  const topQuery: Prisma.ArticleFindManyArgs = {
-    where: { sectionId: section.id, score: { gt: 0 } },
-    orderBy: [{ score: "desc" }, { createdAt: "desc" }],
-    select: articleSelect,
+  const isPrimary = isPrimarySectionSlug(slug);
+  const topicSlugs = isPrimary ? getSectionTopics(slug) : [];
+  const aggregateSlugs = isPrimary ? [slug, ...topicSlugs] : [slug];
+
+  const sectionRecords = await prisma.section.findMany({
+    where: { slug: { in: aggregateSlugs } },
+    select: { id: true, slug: true, name: true, description: true, accentColor: true },
+  });
+
+  const definition = SECTION_DEFINITIONS[slug];
+  const currentSectionRecord = sectionRecords.find((record) => record.slug === slug);
+  const fallbackSection = {
+    id: currentSectionRecord?.id ?? null,
+    slug,
+    name: currentSectionRecord?.name ?? definition?.name.es ?? slug,
+    description: currentSectionRecord?.description ?? definition?.description.es ?? "",
+    accentColor: currentSectionRecord?.accentColor ?? definition?.accentColor ?? "#2563eb",
   };
 
-  const rawTopArticles: ArticlePreview[] = showTop
-    ? ((await prisma.article.findMany({
-        ...topQuery,
-        ...(view === "top" ? {} : { take: 15 }),
-      })) as unknown as ArticlePreview[])
-    : [];
+  const sectionIds = isPrimary
+    ? sectionRecords.map((record) => record.id)
+    : currentSectionRecord?.id
+      ? [currentSectionRecord.id]
+      : [];
 
-  const topArticles = showTop ? await attachTopComments(rawTopArticles) : [];
+  const topPageSize = isPrimary ? 6 : 4;
+  const recentPageSize = 6;
+  const applyTopPagination = isPrimary && normalizedView === "top";
+  const applyRecentPagination = isPrimary && normalizedView === "recent";
 
+  let topArticles: ArticlePreviewWithComment[] = [];
   let recentArticles: ArticlePreviewWithComment[] = [];
+  let hasMoreTop = false;
   let hasMoreRecent = false;
 
-  if (view !== "top") {
-    const take = normalizedPage === 1 ? 5 : 20;
-    const skip = normalizedPage === 1 ? 0 : 5 + (normalizedPage - 2) * 20;
-
-    const recentBatch = await prisma.article.findMany({
-      where: {
-        sectionId: section.id,
-      },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: take + 1,
+  if (sectionIds.length > 0) {
+    const rawTopArticles = (await prisma.article.findMany({
+      where: { sectionId: { in: sectionIds } },
+      orderBy: [{ score: "desc" }, { createdAt: "desc" }],
+      skip: applyTopPagination ? (normalizedPage - 1) * topPageSize : 0,
+      take: topPageSize + (applyTopPagination ? 1 : 0),
       select: articleSelect,
-    });
+    })) as unknown as ArticlePreview[];
+    hasMoreTop = applyTopPagination && rawTopArticles.length > topPageSize;
+    topArticles = await attachTopComments(rawTopArticles.slice(0, topPageSize));
 
-    hasMoreRecent = recentBatch.length > take;
-    const articlesSlice = recentBatch.slice(0, take) as unknown as ArticlePreview[];
-    recentArticles = await attachTopComments(articlesSlice);
+    const rawRecentArticles = (await prisma.article.findMany({
+      where: { sectionId: { in: sectionIds } },
+      orderBy: { createdAt: "desc" },
+      skip: applyRecentPagination ? (normalizedPage - 1) * recentPageSize : 0,
+      take: recentPageSize + (applyRecentPagination ? 1 : 0),
+      select: articleSelect,
+    })) as unknown as ArticlePreview[];
+    hasMoreRecent = applyRecentPagination && rawRecentArticles.length > recentPageSize;
+    recentArticles = await attachTopComments(rawRecentArticles.slice(0, recentPageSize));
   }
 
   return {
-    section,
+    section: fallbackSection,
     topArticles,
     recentArticles,
+    hasMoreTop,
     hasMoreRecent,
     page: normalizedPage,
-    view,
+    view: normalizedView,
+    isPrimary,
   };
 }
 

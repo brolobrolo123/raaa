@@ -29,7 +29,14 @@ export interface MiniProfileDTO {
   stats: {
     articles: number;
     comments: number;
+    votes: number;
+    points: number;
   };
+  battleStats: {
+    total: number;
+    wins: number;
+    losses: number;
+  } | null;
   topArticle: {
     id: string;
     title: string;

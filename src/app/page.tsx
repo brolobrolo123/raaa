@@ -1,159 +1,165 @@
-import { randomInt } from "node:crypto";
+import Image from "next/image";
+import { redirect } from "next/navigation";
+import type { SVGProps } from "react";
 
 import { LandingAuthButtons } from "@/components/auth/landing-auth-buttons";
-import { getSectionCopy, SECTION_SLUGS } from "@/lib/sections";
+import { FullReloadLink } from "@/components/navigation/full-reload-link";
+import { LanguageSwitch } from "@/components/navigation/language-switch";
+import { auth } from "@/lib/auth";
 import { getCurrentLocale, getDictionary, translate } from "@/lib/i18n/server";
+import { getDefaultFabSprite } from "@/lib/site-settings";
 
 export const dynamic = "force-dynamic";
 
-const dysonVariants = [
-  {
-    text: {
-      es: {
-        name: "Teorías",
-        mantra: "Ideas en vigilancia constante: cada hipótesis late en sincronía con nuevas pruebas.",
-      },
-      en: {
-        name: "Theories",
-        mantra: "Ideas under constant watch: every hypothesis pulses in sync with new evidence.",
-      },
-    },
-    planetGradient: "radial-gradient(circle at 30% 30%, #fff7ed 0%, #f472b6 35%, #312e81 70%, #050611 100%)",
-    shellGlow: "rgba(168, 85, 247, 0.45)",
-    ringColor: "rgba(236, 72, 153, 0.4)",
-    starfield: "rgba(244, 114, 182, 0.25)",
-  },
-  {
-    text: {
-      es: {
-        name: "Historia",
-        mantra: "Cronistas ocultos reordenan sucesos mientras revelan rutas alternas del pasado.",
-      },
-      en: {
-        name: "History",
-        mantra: "Hidden chroniclers rearrange events while revealing alternate paths from the past.",
-      },
-    },
-    planetGradient: "radial-gradient(circle at 40% 20%, #e0f2fe 0%, #38bdf8 40%, #0f172a 75%, #020617 100%)",
-    shellGlow: "rgba(14, 165, 233, 0.5)",
-    ringColor: "rgba(56, 189, 248, 0.35)",
-    starfield: "rgba(14, 165, 233, 0.25)",
-  },
-  {
-    text: {
-      es: {
-        name: "Misterios",
-        mantra: "Señales inaudibles despiertan archivos dormidos y convocan nuevas conexiones ocultas.",
-      },
-      en: {
-        name: "Mysteries",
-        mantra: "Unheard signals wake dormant files and summon new hidden connections.",
-      },
-    },
-    planetGradient: "radial-gradient(circle at 50% 35%, #fef3c7 0%, #fbbf24 35%, #fb923c 60%, #2d0c26 90%)",
-    shellGlow: "rgba(251, 146, 60, 0.55)",
-    ringColor: "rgba(251, 191, 36, 0.35)",
-    starfield: "rgba(251, 191, 36, 0.22)",
-  },
-  {
-    text: {
-      es: {
-        name: "Crónicas",
-        mantra: "Relatos cifrados viajan entre investigadores para completar verdades fragmentadas.",
-      },
-      en: {
-        name: "Chronicles",
-        mantra: "Encrypted stories travel between researchers to complete fragmented truths.",
-      },
-    },
-    planetGradient: "radial-gradient(circle at 20% 25%, #efe9ff 0%, #a78bfa 35%, #312e81 65%, #030014 100%)",
-    shellGlow: "rgba(99, 102, 241, 0.5)",
-    ringColor: "rgba(129, 140, 248, 0.4)",
-    starfield: "rgba(76, 29, 149, 0.3)",
-  },
-];
+const TIKTOK_URL = "https://www.tiktok.com/@jsreadme";
+
+const TikTokIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 256 303" aria-hidden="true" {...props}>
+    <path
+      d="M214.8 92.7c-23.2 0-42.8-18.8-43.4-42.1h-31.9v137.9c0 22-17.8 39.8-39.8 39.8s-39.8-17.8-39.8-39.8 17.8-39.8 39.8-39.8c3.3 0 6.4.4 9.4 1.2V116c-3.1-.4-6.2-.6-9.4-.6-41.8 0-75.7 33.9-75.7 75.7s33.9 75.7 75.7 75.7 75.7-33.9 75.7-75.7V108c12.8 9.1 28.3 14.5 45 14.5v-29.8z"
+      fill="currentColor"
+    />
+  </svg>
+);
 
 export default async function Home() {
+  const session = await auth();
+  if (session?.user?.id) {
+    redirect("/hub");
+  }
+
   const locale = await getCurrentLocale();
   const dictionary = getDictionary(locale);
   const t = (path: string) => translate(dictionary, path);
-  const variant = dysonVariants[randomInt(dysonVariants.length)];
-  const variantCopy = variant.text[locale];
-  const sectionHighlights = SECTION_SLUGS.map((slug) => getSectionCopy(slug, locale));
-
-  return (
-    <main className="relative isolate min-h-screen overflow-hidden bg-[#02030f] text-white">
-      <div className="pointer-events-none absolute inset-0 opacity-70" aria-hidden>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.25),transparent_45%),radial-gradient(circle_at_85%_15%,rgba(59,130,246,0.25),transparent_50%),radial-gradient(circle_at_50%_80%,rgba(14,116,144,0.25),transparent_40%)]" />
-        <div className="cosmic-noise" />
-      </div>
-
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-16 px-6 py-16 sm:py-24">
-        <div className="grid items-center gap-12 rounded-[48px] border border-white/10 bg-[#05051a]/70 p-10 shadow-[0_60px_120px_rgba(0,0,0,0.65)] backdrop-blur-2xl lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="space-y-10">
-            <div className="space-y-6">
-              <h1 className="text-4xl font-semibold leading-tight text-white md:text-5xl">
-                {t("home.headline")}
-              </h1>
-            </div>
-
-            <ul className="space-y-4 text-sm text-white/70">
-              {sectionHighlights.map((section) => (
-                <li key={section.name ?? section.description} className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-white/5 p-4 text-left">
-                  <span className="text-xs uppercase tracking-[0.4em] text-cyan-200/90">{section.name}</span>
-                  <span className="text-base leading-relaxed text-white/85">{section.description}</span>
-                  {section.example ? (
-                    <span className="text-sm italic text-white/60">“{section.example}”</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-
-            <LandingAuthButtons />
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-0 -z-10 blur-3xl" style={{ background: variant.starfield }} aria-hidden />
-            <DysonSphere variant={variant} />
-            <div className="mt-8 space-y-2 text-center text-sm text-white/70">
-              <p className="text-xs uppercase tracking-[0.4em] text-white/60">{variantCopy.name}</p>
-              <p className="text-base text-white/85">{variantCopy.mantra}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-type DysonVariant = (typeof dysonVariants)[number];
-
-function DysonSphere({ variant }: { variant: DysonVariant }) {
-  const sparks = [
-    { size: "w-2 h-2", delay: "0s", orbit: "40%" },
-    { size: "w-1.5 h-1.5", delay: "-2s", orbit: "55%" },
-    { size: "w-2 h-2", delay: "-4s", orbit: "70%" },
-    { size: "w-1.5 h-1.5", delay: "-6s", orbit: "82%" },
+  const defaultSprite = await getDefaultFabSprite();
+  const jsReadmeHighlights = [
+    {
+      badge: "Publica y debate",
+      title: "Expresate libremente, tu avatar te cubre",
+      description:
+        "Haz tendencia tu historia, debate libremente, y contruye una reputación. Unete a un Club y comienza a compartir con otras personas que aman lo mismo que tu.",
+    },
+    {
+      badge: "Tus publicaciones te hacen subir de nivel",
+      title: "Participa en el foro y ganas recompensas",
+      description:
+        "Publicar y recibir votaciones te dan puntos para subir de nivel tu Avatar. Asegurate de cumplir las reglas o tus publicaciones serán eliminadas y los puntos descontados",
+    },
+    {
+      badge: "Diseña tu avatar",
+      title: "Contruye a tu guerrero o... lo que quieras",
+      description:
+        "Al registrarte eligirás un Avatar pero no te preocupes si no lo hiciste como queria, podrás cambiarlo cuando quieras.",
+    },
+    {
+      badge: "Batalla con otro usuarios",
+      title: "Vence a todos en las batallas",
+      description:
+        "Las batallas son automaticas y aumentarás de poder por cada batalla ganada aunque tambien bajaras si pierdes, edita el fondo de tu Avatar cuando quieras.",
+    },
+  ];
+  const communityRules = [
+    t("home.communityRuleOne"),
+    t("home.communityRuleTwo"),
+    t("home.communityRuleThree"),
   ];
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[420px]">
-      <div className="absolute inset-0 rounded-full opacity-60" style={{ boxShadow: `0 0 140px ${variant.shellGlow}` }} aria-hidden />
-      <div className="relative flex h-full w-full items-center justify-center">
-        <div className="dyson-shell" style={{ boxShadow: `0 0 60px ${variant.shellGlow}` }}>
-          <div className="dyson-ring" style={{ borderColor: variant.ringColor }} />
-          <div className="dyson-ring dyson-ring--offset" style={{ borderColor: variant.ringColor }} />
-          <div className="dyson-core" style={{ background: variant.planetGradient }} />
-          <div className="dyson-heart" />
-          {sparks.map((spark, index) => (
-            <span
-              key={index}
-              className={`orbiting-node ${spark.size}`}
-              style={{ animationDelay: spark.delay, inset: spark.orbit }}
-            />
-          ))}
-        </div>
+    <main className="relative isolate min-h-screen overflow-hidden text-emerald-100">
+      <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-16 px-6 py-8 sm:py-12">
+        <section className="relative overflow-hidden rounded-[48px] border border-white/15 bg-white/5 p-10 shadow-[0_30px_100px_rgba(2,6,17,0.65)] backdrop-blur-2xl">
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative -mt-3 flex flex-col gap-3 sm:-mt-4">
+            <div className="flex items-center justify-between gap-1">
+              <LanguageSwitch />
+              <Image
+                src="/logos/logo1.png"
+                alt="JsReadme"
+                width={320}
+                height={320}
+                priority
+                className="h-30 w-15 object-contain sm:h-45 sm:w-65"
+              />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
+                {t("home.headline")}
+              </h1>
+              {t("home.subheadline") && (
+                <p className="text-lg text-white/70" style={{ textShadow: "0 25px 45px rgba(3,7,18,0.7)" }}>
+                  {t("home.subheadline")}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <LandingAuthButtons defaultSprite={defaultSprite} />
+              <div className="w-full rounded-[32px] border border-emerald-400/20 bg-black/30 p-4 text-white shadow-[0_20px_45px_rgba(3,7,18,0.55)] sm:ml-auto sm:max-w-xs">
+                <h3 className="mt-1 text-lg font-semibold">Redes Sociales</h3>
+                <p className="text-sm text-white/70">
+                  Actualizaciones del proyecto
+                </p>
+                <a
+                  href={TIKTOK_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center gap-2 rounded-2xl border border-emerald-300/40 px-4 py-2 text-sm font-semibold tracking-[0.2em] text-white transition hover:border-white/70"
+                >
+                  <TikTokIcon className="h-5 w-5" />
+                  Seguir
+                </a>
+              </div>
+              <FullReloadLink
+                href="#que-hacer"
+                className="inline-flex items-center justify-center rounded-full border border-emerald-500/40 px-6 py-3 text-xs uppercase tracking-[0.4em] text-emerald-100 transition hover:border-emerald-400 hover:text-emerald-50 md:hidden"
+              >
+                {t("home.ctaQueHacer")}
+              </FullReloadLink>
+            </div>
+          </div>
+        </section>
+
+        <section id="que-hacer" className="space-y-8">
+          <div className="space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/70">¿Qué es JsReadme?</p>
+            <h2 className="text-3xl font-semibold text-white">Foro Social con un juego XD</h2>
+            <p className="text-base text-white/75">
+              JsReadme es un foro en el que podrás expresarte libremente comentando y publicando, batallarás contra otros otros jugadores y representarás a tu Club.
+            </p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            {jsReadmeHighlights.map((card) => (
+              <article
+                key={card.title}
+                className="relative overflow-hidden rounded-[28px] border border-white/10 bg-white/5 p-6 text-white shadow-[0_20px_60px_rgba(2,6,17,0.6)] backdrop-blur-xl"
+              >
+                <div className="absolute inset-0 bg-black/30 opacity-60" />
+                <div className="relative space-y-3">
+                  <p className="text-xs uppercase tracking-[0.35em] text-emerald-200/60">{card.badge}</p>
+                  <h3 className="text-2xl font-semibold">{card.title}</h3>
+                  <p className="text-sm text-white/80">{card.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-4 rounded-[28px] border border-white/10 bg-white/5 p-8 text-white shadow-[0_20px_60px_rgba(2,6,17,0.6)] backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-emerald-200/70">{t("home.communityRulesTitle")}</p>
+              <h3 className="text-2xl font-semibold">{t("home.communityRulesIntro")}</h3>
+            </div>
+          </div>
+          <ul className="space-y-3 text-sm text-emerald-100/80">
+            {communityRules.map((rule, index) => (
+              <li key={`rule-${index}`} className="flex items-start gap-3">
+                <span className="text-[10px] uppercase tracking-[0.35em] text-emerald-300">{index + 1}.</span>
+                <span>{rule}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

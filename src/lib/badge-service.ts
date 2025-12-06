@@ -1,11 +1,14 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { BattleStatus, type Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { MiniProfileDTO, OwnedBadgeDTO } from "@/types/profile";
 import { resolveMiniProfileAccent } from "./mini-profile";
+import { PROFILE_ARTICLE_POINTS, PROFILE_VOTE_POINTS } from "./avatar/power";
 
 interface UserContributionStats {
   articleCount: number;
   commentCount: number;
+  articleVoteCount: number;
+  points: number;
   totalArticleScore: number;
   topArticle: {
     id: string;
@@ -98,30 +101,35 @@ async function ensureBadgeCatalog(client: PrismaClient) {
 }
 
 async function computeUserStats(userId: string, client: PrismaClient): Promise<UserContributionStats> {
-  const [articleCount, commentCount, articleScoreAggregate, topArticle, latestComment] = await client.$transaction([
-    client.article.count({ where: { authorId: userId } }),
-    client.comment.count({ where: { authorId: userId } }),
-    client.article.aggregate({ where: { authorId: userId }, _sum: { score: true } }),
-    client.article.findFirst({
-      where: { authorId: userId },
-      orderBy: [{ score: "desc" }, { createdAt: "desc" }],
-      select: { id: true, title: true, score: true, createdAt: true },
-    }),
-    client.comment.findFirst({
-      where: { authorId: userId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        body: true,
-        createdAt: true,
-        article: { select: { id: true, title: true } },
-      },
-    }),
-  ]);
+  const [articleCount, commentCount, articleVoteCount, articleScoreAggregate, topArticle, latestComment] =
+    await client.$transaction([
+      client.article.count({ where: { authorId: userId } }),
+      client.comment.count({ where: { authorId: userId } }),
+      client.articleVote.count({ where: { article: { authorId: userId } } }),
+      client.article.aggregate({ where: { authorId: userId }, _sum: { score: true } }),
+      client.article.findFirst({
+        where: { authorId: userId },
+        orderBy: [{ score: "desc" }, { createdAt: "desc" }],
+        select: { id: true, title: true, score: true, createdAt: true },
+      }),
+      client.comment.findFirst({
+        where: { authorId: userId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          body: true,
+          createdAt: true,
+          article: { select: { id: true, title: true } },
+        },
+      }),
+    ]);
 
+  const points = articleCount * PROFILE_ARTICLE_POINTS + articleVoteCount * PROFILE_VOTE_POINTS;
   return {
     articleCount,
     commentCount,
+    articleVoteCount,
+    points,
     totalArticleScore: articleScoreAggregate._sum.score ?? 0,
     topArticle: topArticle ?? null,
     latestComment: latestComment
@@ -232,6 +240,42 @@ export async function setFeaturedBadges(
   return updated.map(mapUserBadgeToDTO);
 }
 
+export async function getUserContributionStats(userId: string, client: PrismaClient = prisma) {
+  return computeUserStats(userId, client);
+}
+
+async function getUserBattleStats(userId: string, client: PrismaClient) {
+  const avatar = await client.avatar.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  if (!avatar) {
+    return null;
+  }
+  const [total, wins, losses] = await client.$transaction([
+    client.avatarBattle.count({
+      where: {
+        status: BattleStatus.COMPLETE,
+        OR: [{ challengerId: avatar.id }, { opponentId: avatar.id }],
+      },
+    }),
+    client.avatarBattle.count({
+      where: {
+        status: BattleStatus.COMPLETE,
+        winnerId: avatar.id,
+      },
+    }),
+    client.avatarBattle.count({
+      where: {
+        status: BattleStatus.COMPLETE,
+        loserId: avatar.id,
+      },
+    }),
+  ]);
+
+  return { total, wins, losses };
+}
+
 export async function getMiniProfilePayload(
   username: string,
   client: PrismaClient = prisma,
@@ -259,10 +303,13 @@ export async function getMiniProfilePayload(
   }
 
   const stats = await refreshUserBadges(user.id, client);
-  const userBadges = await client.userBadge.findMany({
-    where: { userId: user.id },
-    include: { badge: true },
-  });
+  const [userBadges, battleStats] = await Promise.all([
+    client.userBadge.findMany({
+      where: { userId: user.id },
+      include: { badge: true },
+    }),
+    getUserBattleStats(user.id, client),
+  ]);
   const orderedBadges = orderBadgesForDisplay(userBadges.map(mapUserBadgeToDTO));
 
   return {
@@ -275,7 +322,16 @@ export async function getMiniProfilePayload(
     stats: {
       articles: stats.articleCount,
       comments: stats.commentCount,
+      votes: stats.articleVoteCount,
+      points: stats.points,
     },
+    battleStats: battleStats
+      ? {
+          total: battleStats.total,
+          wins: battleStats.wins,
+          losses: battleStats.losses,
+        }
+      : null,
     topArticle: stats.topArticle
       ? {
           id: stats.topArticle.id,

@@ -1,14 +1,19 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArticleCard } from "@/components/article/article-card";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { HomeButton } from "@/components/navigation/home-button";
-import { NotificationBell } from "@/components/navigation/notification-bell";
+import { FullReloadLink } from "@/components/navigation/full-reload-link";
 import { cn } from "@/lib/cn";
 import { getSectionSnapshot } from "@/lib/article-service";
 import { getCoverBackgroundStyles, getCoverBorderColor } from "@/lib/media";
-import { getSectionCopy, SECTION_SLUGS, type SectionSlug } from "@/lib/sections";
+import {
+  SECTION_SLUGS,
+  getSectionCopy,
+  getSectionParentSlug,
+  getSectionTopics,
+  isPrimarySectionSlug,
+  type SectionSlug,
+} from "@/lib/sections";
 import { requireUser } from "@/lib/session";
 import { getCurrentLocale, getDictionary, translate } from "@/lib/i18n/server";
 
@@ -28,26 +33,29 @@ export default async function SectionPage(props: PageProps) {
 
   const page = Number(searchParams.page ?? "1");
   const viewInput = searchParams.view;
-  const view = viewInput === "top" || viewInput === "recent" ? viewInput : "default";
+  const view = viewInput === "recent" ? "recent" : "top";
 
   const snapshot = await getSectionSnapshot({ slug: typedSlug, page, view });
-  if (!snapshot) {
-    notFound();
-  }
   const locale = await getCurrentLocale();
   const dictionary = getDictionary(locale);
   const t = (path: string) => translate(dictionary, path);
   const sectionCopy = getSectionCopy(typedSlug, locale);
-  const sectionName = sectionCopy.name ?? snapshot.section.name;
-  const sectionDescription = sectionCopy.description ?? snapshot.section.description;
+  const sectionName = sectionCopy.name ?? snapshot.section.name ?? typedSlug;
+  const sectionDescription = sectionCopy.description ?? snapshot.section.description ?? "";
+  const isPrimarySection = isPrimarySectionSlug(typedSlug);
+  const primarySlugContext = isPrimarySection ? typedSlug : getSectionParentSlug(typedSlug);
+  const topicSlugs = primarySlugContext ? getSectionTopics(primarySlugContext) : [];
+  const showTopicSelector = Boolean(primarySlugContext && topicSlugs.length > 0);
+  const allTopicsLabel = t("sectionsPage.topicSelectorAll");
+  const topArticles = snapshot.topArticles;
+  const recentArticles = snapshot.recentArticles;
+  const currentView = snapshot.view;
+  const currentPage = snapshot.page;
+  const hasMoreTop = snapshot.hasMoreTop;
+  const hasMoreRecent = snapshot.hasMoreRecent;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-16 text-white">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <HomeButton expanded />
-        <NotificationBell />
-      </div>
-
       <header className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/5 p-6">
         <div className="space-y-2">
           <h1 className="text-4xl font-semibold">{sectionName}</h1>
@@ -57,62 +65,123 @@ export default async function SectionPage(props: PageProps) {
           <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/5 px-4 py-2">
             <span className="text-xs uppercase tracking-[0.3em] text-white/50">{t("common.filter")}</span>
             <div className="flex items-center gap-2">
-              <Link
+              <FullReloadLink
                 href={`/sections/${typedSlug}?view=top`}
                 className={cn(
                   "rounded-2xl px-3 py-1 text-sm text-white/70 transition hover:bg-white/10 hover:text-white",
-                  view === "top" && "bg-white/10 text-white",
+                  currentView === "top" && "bg-white/10 text-white",
                 )}
               >
                 {t("common.mostVoted")}
-              </Link>
-              <Link
+              </FullReloadLink>
+              <FullReloadLink
                 href={`/sections/${typedSlug}?view=recent`}
                 className={cn(
                   "rounded-2xl px-3 py-1 text-sm text-white/70 transition hover:bg-white/10 hover:text-white",
-                  view === "recent" && "bg-white/10 text-white",
+                  currentView === "recent" && "bg-white/10 text-white",
                 )}
               >
                 {t("common.recent")}
-              </Link>
+              </FullReloadLink>
             </div>
           </div>
-          <Button
-            asChild
-            className="bg-linear-to-r from-sky-500 via-indigo-500 to-purple-500 text-white shadow-[0_10px_30px_rgba(14,165,233,0.35)] hover:-translate-y-px"
-          >
-            <Link href="/articles/new">{t("common.publishArticle")}</Link>
-          </Button>
         </div>
       </header>
 
-      {snapshot.topArticles.length > 0 && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold">{t("common.mostVoted")}</h2>
-            <span className="text-sm text-slate-400">
-              {snapshot.topArticles.length} {t("sectionsPage.watchCountSuffix")}
-            </span>
+      {showTopicSelector && (
+        <section className="space-y-2 rounded-3xl border border-white/10 bg-white/5 p-5">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.35em] text-white/50">{t("sectionsPage.topicSelectorLabel")}</p>
+            <p className="text-sm text-white/70">{t("sectionsPage.topicSelectorHint")}</p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {snapshot.topArticles.map((article) => (
-              <ArticleCard key={article.id} article={{ ...article, createdAt: article.createdAt }} highlight />
-            ))}
+          <div className="flex flex-wrap gap-2">
+            {primarySlugContext && (
+              <FullReloadLink
+                key={primarySlugContext}
+                href={`/sections/${primarySlugContext}`}
+                className={cn(
+                  "rounded-2xl px-3 py-1 text-sm font-semibold transition",
+                  typedSlug === primarySlugContext
+                    ? "bg-white/20 text-white"
+                    : "border border-white/10 text-white/70 hover:border-white/30",
+                )}
+              >
+                {allTopicsLabel}
+              </FullReloadLink>
+            )}
+            {topicSlugs.map((subSlug) => {
+              const subCopy = getSectionCopy(subSlug, locale);
+              const isActive = typedSlug === subSlug;
+              return (
+                <FullReloadLink
+                  key={subSlug}
+                  href={`/sections/${subSlug}`}
+                  className={cn(
+                    "rounded-2xl px-3 py-1 text-sm font-semibold transition",
+                    isActive
+                      ? "bg-white/20 text-white"
+                      : "border border-white/10 text-white/70 hover:border-white/30",
+                  )}
+                >
+                  {subCopy.name}
+                </FullReloadLink>
+              );
+            })}
           </div>
         </section>
       )}
 
-      {snapshot.view !== "top" && (
+      {currentView === "top" && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">{t("common.mostVoted")}</h2>
+            <span className="text-sm text-slate-400">
+              {topArticles.length} {t("sectionsPage.watchCountSuffix")}
+            </span>
+          </div>
+          {topArticles.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {topArticles.map((article) => (
+                <ArticleCard key={article.id} article={{ ...article, createdAt: article.createdAt }} highlight />
+              ))}
+            </div>
+          ) : (
+            <Card className="border-white/5 bg-white/10 text-center text-slate-300">
+              {t("sectionsPage.noRecentRecords")}
+            </Card>
+          )}
+          {isPrimarySection && (currentPage > 1 || hasMoreTop) && (
+            <div className="flex items-center gap-4">
+              {currentPage > 1 && (
+                <Button asChild variant="secondary">
+                  <FullReloadLink href={`/sections/${typedSlug}?view=top&page=${Math.max(1, currentPage - 1)}`}>
+                    ← {t("common.previousPage")}
+                  </FullReloadLink>
+                </Button>
+              )}
+              {hasMoreTop && (
+                <Button asChild variant="secondary">
+                  <FullReloadLink href={`/sections/${typedSlug}?view=top&page=${currentPage + 1}`}>
+                    {t("common.nextPage")} →
+                  </FullReloadLink>
+                </Button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {currentView === "recent" && (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-semibold">{t("common.recent")}</h2>
             <span className="text-sm text-slate-400">
-              {t("common.page")} {snapshot.page} {snapshot.hasMoreRecent ? t("sectionsPage.moreAvailable") : ""}
+              {t("common.page")} {currentPage} {hasMoreRecent ? t("sectionsPage.moreAvailable") : ""}
             </span>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            {snapshot.recentArticles.map((article) => (
-              <Link
+            {recentArticles.map((article) => (
+              <FullReloadLink
                 key={article.id}
                 href={`/articles/${article.id}`}
                 className="rounded-3xl border bg-cover bg-center p-5 text-white shadow-inner transition hover:-translate-y-1"
@@ -139,36 +208,38 @@ export default async function SectionPage(props: PageProps) {
                       &quot;{article.topComment.body}&quot;
                     </p>
                     <p className="mt-2 text-xs text-slate-300">
-                        — @{article.topComment.author.username} · {article.topComment.score} {t("common.votes")}
+                      — @{article.topComment.author.username} · {article.topComment.score} {t("common.votes")}
                     </p>
                   </div>
                 ) : (
-                    <p className="mt-4 text-xs text-slate-400">{t("sectionsPage.noComments")}</p>
+                  <p className="mt-4 text-xs text-slate-400">{t("sectionsPage.noComments")}</p>
                 )}
-              </Link>
+              </FullReloadLink>
             ))}
-            {snapshot.recentArticles.length === 0 && (
-                <Card className="border-white/5 bg-white/10 text-center text-slate-300">
-                  {t("sectionsPage.noRecentRecords")}
-                </Card>
+            {recentArticles.length === 0 && (
+              <Card className="border-white/5 bg-white/10 text-center text-slate-300">
+                {t("sectionsPage.noRecentRecords")}
+              </Card>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            {snapshot.page > 1 && (
-              <Button asChild variant="secondary">
-                <Link href={`/sections/${typedSlug}?view=${view}&page=${Math.max(1, snapshot.page - 1)}`}>
-                  ← {t("common.previousPage")}
-                </Link>
-              </Button>
-            )}
-            {snapshot.hasMoreRecent && (
-              <Button asChild variant="secondary">
-                <Link href={`/sections/${typedSlug}?view=${view}&page=${snapshot.page + 1}`}>
-                  {t("common.nextPage")} →
-                </Link>
-              </Button>
-            )}
-          </div>
+          {isPrimarySection && (currentPage > 1 || hasMoreRecent) && (
+            <div className="flex items-center gap-4">
+              {currentPage > 1 && (
+                <Button asChild variant="secondary">
+                  <FullReloadLink href={`/sections/${typedSlug}?view=recent&page=${Math.max(1, currentPage - 1)}`}>
+                    ← {t("common.previousPage")}
+                  </FullReloadLink>
+                </Button>
+              )}
+              {hasMoreRecent && (
+                <Button asChild variant="secondary">
+                  <FullReloadLink href={`/sections/${typedSlug}?view=recent&page=${currentPage + 1}`}>
+                    {t("common.nextPage")} →
+                  </FullReloadLink>
+                </Button>
+              )}
+            </div>
+          )}
         </section>
       )}
     </main>

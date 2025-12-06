@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Section {
@@ -18,25 +18,50 @@ model Section {
 }
 
 model User {
-  id                    String         @id @default(cuid())
-  username              String         @unique
-  email                 String         @unique
+  id                    String            @id @default(cuid())
+  username              String            @unique
+  email                 String            @unique
   hashedPassword        String
-  image                 String?        @default("/avatars/default.svg")
+  image                 String?           @default("/avatars/default.svg")
   bio                   String?
-  lastSeenAt            DateTime       @default(now())
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-  miniProfileAccent     String         @default("#0f172a")
+  lastSeenAt            DateTime          @default(now())
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  miniProfileAccent     String            @default("#0f172a")
+  fabPixelSprite        String?
+  role                  Role              @default(USER)
+  bannedUntil           DateTime?
+  banReason             String?
+  silencedUntil         DateTime?
+  silenceReason         String?
+  permanentBan          Boolean           @default(false)
   accounts              Account[]
   articles              Article[]
   articleVotes          ArticleVote[]
+  avatar                Avatar?
   comments              Comment[]
   commentVotes          CommentVote[]
-  sentNotifications     Notification[] @relation("NotificationActors")
-  receivedNotifications Notification[] @relation("UserNotifications")
+  moderatorRequest      ModeratorRequest? @relation("UserModeratorRequest")
+  sentNotifications     Notification[]    @relation("NotificationActors")
+  receivedNotifications Notification[]    @relation("UserNotifications")
   sessions              Session[]
+  activities            UserActivity[]
   badges                UserBadge[]
+  issuedBans            UserBan[]         @relation("IssuedBans")
+  bans                  UserBan[]         @relation("UserBans")
+  issuedWarnings        UserWarning[]     @relation("IssuedWarnings")
+  receivedWarnings      UserWarning[]     @relation("UserWarnings")
+  battleChatMessages    AvatarBattleChatMessage[]
+  globalChatMessages    GlobalChatMessage[]
+  pixelColorClaims      PixelColorClaim[]
+  clubMemberships       ClubMembership[]
+  clubMessages          ClubMessage[]
+  issuedClubDiscipline  ClubDiscipline[]  @relation("ClubDisciplineIssuer")
+  receivedClubDiscipline ClubDiscipline[] @relation("ClubDisciplineTarget")
+  clubModeratorApplications ClubModeratorRequest[] @relation("ClubModeratorRequestUser")
+  reviewedClubModeratorRequests ClubModeratorRequest[] @relation("ClubModeratorRequestReviewer")
+  createdPolls        ClubPoll[]
+  pollVotes           ClubPollVote[]
 }
 
 model Article {
@@ -82,12 +107,12 @@ model Comment {
   articleId     String
   authorId      String
   parentId      String?
-  parent        Comment?       @relation("CommentChildren", fields: [parentId], references: [id], onDelete: Cascade)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  replies       Comment[]      @relation("CommentChildren")
-  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
   article       Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent        Comment?       @relation("CommentChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]      @relation("CommentChildren")
   votes         CommentVote[]
   notifications Notification[]
 
@@ -119,9 +144,9 @@ model Notification {
   message   String
   createdAt DateTime  @default(now())
   readAt    DateTime?
-  comment   Comment?  @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  article   Article?  @relation(fields: [articleId], references: [id], onDelete: Cascade)
   actor     User      @relation("NotificationActors", fields: [actorId], references: [id], onDelete: Cascade)
+  article   Article?  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  comment   Comment?  @relation(fields: [commentId], references: [id], onDelete: Cascade)
   user      User      @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt])
@@ -145,9 +170,8 @@ model UserBadge {
   badgeId      String
   earnedAt     DateTime @default(now())
   featuredSlot Int?
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  badge        Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, badgeId])
 }
@@ -184,4 +208,325 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model UserWarning {
+  id         String   @id @default(cuid())
+  userId     String
+  issuedById String
+  reason     String
+  createdAt  DateTime @default(now())
+  issuedBy   User     @relation("IssuedWarnings", fields: [issuedById], references: [id], onDelete: Cascade)
+  user       User     @relation("UserWarnings", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserActivity {
+  id              String   @id @default(cuid())
+  userId          String
+  durationMinutes Int
+  recordedAt      DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, recordedAt])
+}
+
+model UserBan {
+  id         String    @id @default(cuid())
+  userId     String
+  issuedById String
+  startAt    DateTime
+  endAt      DateTime?
+  reason     String?
+  createdAt  DateTime  @default(now())
+  permanent  Boolean   @default(false)
+  issuedBy   User      @relation("IssuedBans", fields: [issuedById], references: [id], onDelete: Cascade)
+  user       User      @relation("UserBans", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startAt])
+}
+
+model ModeratorRequest {
+  id        String                 @id @default(cuid())
+  userId    String                 @unique
+  status    ModeratorRequestStatus @default(PENDING)
+  message   String?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  user      User                   @relation("UserModeratorRequest", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Club {
+  id             String                @id @default(cuid())
+  slug           String                @unique
+  name           String
+  description    String
+  tagline        String
+  icon           String
+  accentColor    String
+  heroGradient   String
+  welcomeMessage String
+  rules          Json
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  memberships    ClubMembership[]
+  messages       ClubMessage[]
+  moderatorRequests ClubModeratorRequest[]
+  disciplines    ClubDiscipline[]
+  polls          ClubPoll[]
+}
+
+model ClubMembership {
+  id        String          @id @default(cuid())
+  clubId    String
+  userId    String
+  role      ClubMemberRole  @default(MEMBER)
+  joinedAt  DateTime        @default(now())
+  club      Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([userId])
+}
+
+model ClubMessage {
+  id          String    @id @default(cuid())
+  clubId      String
+  authorId    String
+  body        String
+  attachments Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  club        Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, createdAt])
+}
+
+model ClubDiscipline {
+  id         String             @id @default(cuid())
+  clubId     String
+  userId     String
+  issuedById String
+  type       ClubDisciplineType
+  reason     String?
+  expiresAt  DateTime?
+  createdAt  DateTime           @default(now())
+  club       Club               @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user       User               @relation("ClubDisciplineTarget", fields: [userId], references: [id], onDelete: Cascade)
+  issuedBy   User               @relation("ClubDisciplineIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
+
+  @@index([clubId, userId])
+  @@index([expiresAt])
+}
+
+model ClubModeratorRequest {
+  id          String                       @id @default(cuid())
+  clubId      String
+  userId      String
+  discord     String
+  motivation  String
+  status      ClubModeratorRequestStatus   @default(PENDING)
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+  reviewedAt  DateTime?
+  reviewerId  String?
+  moderationNotes String?
+  club        Club                         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user        User                         @relation("ClubModeratorRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer    User?                        @relation("ClubModeratorRequestReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@unique([clubId, userId])
+  @@index([status, createdAt])
+}
+
+model ClubPoll {
+  id              String         @id @default(cuid())
+  clubId          String
+  createdById     String
+  question        String
+  options         Json
+  durationMinutes Int
+  createdAt       DateTime       @default(now())
+  expiresAt       DateTime?
+  club            Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  createdBy       User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  votes           ClubPollVote[]
+
+  @@index([clubId, expiresAt])
+}
+
+model ClubPollVote {
+  id        String   @id @default(cuid())
+  pollId    String
+  userId    String
+  optionIndex Int
+  createdAt DateTime @default(now())
+  poll      ClubPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@index([pollId])
+}
+
+model Avatar {
+  id                  String         @id @default(cuid())
+  userId              String         @unique
+  currentHp           Int            @default(100)
+  maxHp               Int            @default(100)
+  damage              Int            @default(1)
+  evasion             Int            @default(0)
+  hpUpgrades          Int            @default(0)
+  damageUpgrades      Int            @default(0)
+  evasionUpgrades     Int            @default(0)
+  forumPointsSpent    Int            @default(0)
+  hudBackgroundImage  String?
+  points              Int            @default(0)
+  status              AvatarStatus   @default(SEARCHING)
+  inBattle            Boolean        @default(false)
+  activeBattleId      String?
+  battleLockExpiresAt DateTime?
+  lastBattleAt        DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeBattle        AvatarBattle?  @relation("AvatarActiveBattle", fields: [activeBattleId], references: [id], onDelete: SetNull)
+  battlesAsChallenger AvatarBattle[] @relation("Attacker")
+  battlesAsDefender   AvatarBattle[] @relation("Defender")
+  items               AvatarItem[]
+
+  @@index([activeBattleId])
+}
+
+model AvatarBattle {
+  id             String       @id @default(cuid())
+  challengerId   String
+  opponentId     String
+  status         BattleStatus @default(PENDING)
+  winnerId       String?
+  loserId        String?
+  firstStrikerId String?
+  rounds         Int          @default(0)
+  durationSeconds Int         @default(0)
+  log            String?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
+  challenger     Avatar       @relation("Attacker", fields: [challengerId], references: [id], onDelete: Cascade)
+  opponent       Avatar       @relation("Defender", fields: [opponentId], references: [id], onDelete: Cascade)
+  activeAvatars  Avatar[]     @relation("AvatarActiveBattle")
+  chatMessages   AvatarBattleChatMessage[]
+}
+
+model AvatarBattleChatMessage {
+  id        String   @id @default(cuid())
+  battleId  String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  battle    AvatarBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([battleId, createdAt])
+}
+
+model GlobalChatMessage {
+  id        String   @id @default(cuid())
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
+model AvatarItem {
+  id          String         @id @default(cuid())
+  avatarId    String
+  name        String
+  description String?
+  type        AvatarItemType @default(BACKPACK)
+  createdAt   DateTime       @default(now())
+  avatar      Avatar         @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+}
+
+model PixelColorClaim {
+  id         String       @id @default(cuid())
+  userId     String
+  slotIndex  Int
+  region     PixelRegion
+  pixelIndex Int
+  color      String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([region, pixelIndex, color])
+  @@index([userId])
+}
+
+model ShopItem {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Int
+  image       String?
+  createdAt   DateTime @default(now())
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+  OWNER
+}
+
+enum ModeratorRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ClubMemberRole {
+  MEMBER
+  MODERATOR
+  OWNER
+}
+
+enum ClubDisciplineType {
+  BAN
+  SILENCE
+  SUSPENSION
+}
+
+enum ClubModeratorRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AvatarStatus {
+  SEARCHING
+  IN_BATTLE
+  COOLDOWN
+}
+
+enum BattleStatus {
+  PENDING
+  COMPLETE
+}
+
+enum AvatarItemType {
+  BACKPACK
+}
+
+enum PixelRegion {
+  HEAD
+  BODY
 }

@@ -19,6 +19,7 @@ export function UserAvatar({ image, size = 32, alt = "Avatar", className }: User
       alt={alt}
       width={dimension}
       height={dimension}
+      unoptimized
       className={cn("rounded-full object-cover", className)}
       style={{ width: dimension, height: dimension }}
     />

@@ -1,11 +1,9 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArticleVoteButton } from "@/components/article/article-vote-button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CommentThread } from "@/components/comments/comment-thread";
-import { HomeButton } from "@/components/navigation/home-button";
-import { NotificationBell } from "@/components/navigation/notification-bell";
+import { FullReloadLink } from "@/components/navigation/full-reload-link";
 import { UserAvatar } from "@/components/user/user-avatar";
 import { MiniProfileHoverCard } from "@/components/user/mini-profile-hover-card";
 import { getArticleWithMeta, getCommentBundle, serializeCommentNodes } from "@/lib/article-service";
@@ -13,7 +11,7 @@ import { requireUser } from "@/lib/session";
 
 interface ArticlePageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ comments?: string }>;
+  searchParams: Promise<{ comments?: string; section?: string }>;
 }
 
 export default async function ArticlePage(props: ArticlePageProps) {
@@ -24,6 +22,18 @@ export default async function ArticlePage(props: ArticlePageProps) {
     notFound();
   }
 
+  const { article, hasVoted } = articleResult;
+  const requestedSectionSlug = searchParams.section;
+  const expectedSectionSlug = article.section.slug;
+  if (requestedSectionSlug !== expectedSectionSlug) {
+    const params = new URLSearchParams();
+    params.set("section", expectedSectionSlug);
+    if (searchParams.comments) {
+      params.set("comments", searchParams.comments);
+    }
+    redirect(`/articles/${article.id}?${params.toString()}`);
+  }
+
   const commentMode =
     searchParams.comments === "top" || searchParams.comments === "recent"
       ? (searchParams.comments as "top" | "recent")
@@ -32,18 +42,12 @@ export default async function ArticlePage(props: ArticlePageProps) {
   const commentBundle = await getCommentBundle(id, commentMode, session.user.id);
   const serialized = serializeCommentNodes(commentBundle.comments);
 
-  const { article, hasVoted } = articleResult;
-
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-10 px-6 py-16 text-white">
-      <div className="flex items-center justify-between">
-        <HomeButton expanded />
-        <NotificationBell />
-      </div>
       <div className="flex items-center gap-3 text-sm text-slate-300">
-        <Link href={`/sections/${article.section.slug}`} className="hover:text-white">
+        <FullReloadLink href={`/sections/${article.section.slug}`} className="hover:text-white">
           ← Volver a {article.section.name}
-        </Link>
+        </FullReloadLink>
       </div>
 
       <article className="space-y-6">
@@ -74,14 +78,18 @@ export default async function ArticlePage(props: ArticlePageProps) {
           variant={commentMode === "top" ? "primary" : "ghost"}
           className="rounded-2xl border border-white/15 bg-white/10 px-5 py-2 text-white/80 hover:bg-white/20"
         >
-          <Link href={`/articles/${article.id}?comments=top`}>Más votados</Link>
+          <FullReloadLink href={`/articles/${article.id}?comments=top`}>
+            Más votados
+          </FullReloadLink>
         </Button>
         <Button
           asChild
           variant={commentMode === "recent" ? "primary" : "ghost"}
           className="rounded-2xl border border-white/15 bg-white/10 px-5 py-2 text-white/80 hover:bg-white/20"
         >
-          <Link href={`/articles/${article.id}?comments=recent`}>Recientes</Link>
+          <FullReloadLink href={`/articles/${article.id}?comments=recent`}>
+            Recientes
+          </FullReloadLink>
         </Button>
       </div>
 

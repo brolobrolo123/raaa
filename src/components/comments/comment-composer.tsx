@@ -50,6 +50,9 @@ export function CommentComposer({ articleId, parentId, placeholder, onCreated }:
       setValue("");
       setMessage(null);
       onCreated?.(newComment);
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
     });
   };
 

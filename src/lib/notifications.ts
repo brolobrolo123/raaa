@@ -1,7 +1,12 @@
 import { prisma } from "./prisma";
 import { broadcastNotificationUpdate } from "./notification-stream";
 
-export type NotificationType = "ARTICLE_COMMENT" | "COMMENT_REPLY" | "COMMENT_LIKE";
+export type NotificationType =
+  | "ARTICLE_COMMENT"
+  | "COMMENT_REPLY"
+  | "COMMENT_LIKE"
+  | "MODERATION_ALERT"
+  | "MODERATION_PENALTY";
 
 interface CommentNotificationInput {
   articleId: string;
@@ -84,6 +89,43 @@ export async function recordCommentLikeNotification(input: CommentLikeNotificati
     },
   });
   broadcastNotificationUpdate(commentAuthorId);
+}
+
+interface ModerationAlertInput {
+  userId: string;
+  actorId: string;
+  alertIndex: number;
+}
+
+export async function sendModerationAlertNotification({ userId, actorId, alertIndex }: ModerationAlertInput) {
+  const message = `El equipo de moderación te envió una alerta. (${alertIndex}/3)`;
+  await prisma.notification.create({
+    data: {
+      userId,
+      actorId,
+      type: "MODERATION_ALERT",
+      message,
+    },
+  });
+  broadcastNotificationUpdate(userId);
+}
+
+interface ModerationPenaltyInput {
+  userId: string;
+  actorId: string;
+}
+
+export async function sendModerationPenaltyNotification({ userId, actorId }: ModerationPenaltyInput) {
+  const message = "Acumulaste tres alertas y fuiste baneado por una semana.";
+  await prisma.notification.create({
+    data: {
+      userId,
+      actorId,
+      type: "MODERATION_PENALTY",
+      message,
+    },
+  });
+  broadcastNotificationUpdate(userId);
 }
 
 export async function getNotificationsPayload(userId: string) {

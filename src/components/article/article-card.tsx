@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { CSSProperties } from "react";
 import { ArrowUpRight, MessageCircleMore } from "lucide-react";
 import type { Article } from "@/types/content";
@@ -27,7 +26,7 @@ export function ArticleCard({ article, highlight = false, compact = false }: Art
   const summaryText = highlight ? article.summary : summaryPreview;
 
   return (
-    <Link
+    <a
       href={`/articles/${article.id}`}
       className={cn(
         "flex flex-col gap-3 rounded-3xl border border-white/10 p-5 text-white transition-all hover:-translate-y-1 hover:border-white/50",
@@ -80,7 +79,7 @@ export function ArticleCard({ article, highlight = false, compact = false }: Art
         </MiniProfileHoverCard>
         <Badge tone="muted">{new Date(article.createdAt).toLocaleDateString()}</Badge>
       </div>
-    </Link>
+    </a>
   );
 }
 

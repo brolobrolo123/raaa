@@ -4,6 +4,7 @@ import { SiteFooter } from "@/components/navigation/site-footer";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getCurrentLocale, getDictionary } from "@/lib/i18n/server";
 import "./globals.css";
+import { BackgroundSlideshow } from "@/components/background-slideshow";
 
 const primaryFont = Space_Grotesk({
   variable: "--font-geist-sans",
@@ -18,7 +19,7 @@ const techFont = Share_Tech_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Teoría Colectiva",
+  title: "JsReadMe",
   description:
     "Foro colaborativo para historias alternativas, miradas críticas y teorías por validar.",
 };
@@ -34,6 +35,7 @@ export default async function RootLayout({
     <html lang={locale}>
       <body className={`${primaryFont.variable} ${techFont.variable} antialiased text-slate-50`}>
         <I18nProvider locale={locale} dictionary={dictionary}>
+          <BackgroundSlideshow />
           <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
             <div
               className="absolute inset-0 animate-[pulseGlow_24s_ease-in-out_infinite] opacity-70"

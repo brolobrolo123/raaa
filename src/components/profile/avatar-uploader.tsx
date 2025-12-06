@@ -4,6 +4,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/lib/i18n/client";
 import { getAvatarUrl } from "@/lib/media";
 
 interface AvatarUploaderProps {
@@ -13,6 +14,7 @@ interface AvatarUploaderProps {
 
 export function AvatarUploader({ initialAvatar, username }: AvatarUploaderProps) {
   const router = useRouter();
+  const t = useTranslations();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState(getAvatarUrl(initialAvatar));
   const [status, setStatus] = useState<string | null>(null);
@@ -40,16 +42,20 @@ export function AvatarUploader({ initialAvatar, username }: AvatarUploaderProps)
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        setError(payload?.error ?? "No se pudo actualizar tu avatar");
+        setError(payload?.error ?? t("profilePage.avatarUploader.error"));
         return;
       }
       const data = (await response.json()) as { url: string };
       setPreview(getAvatarUrl(data.url));
-      setStatus("Foto actualizada");
-      router.refresh();
+      setStatus(t("profilePage.avatarUploader.success"));
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      } else {
+        router.refresh();
+      }
     } catch (uploadError) {
       console.error(uploadError);
-      setError("Error inesperado al subir tu imagen");
+      setError(t("profilePage.avatarUploader.unexpectedError"));
     } finally {
       setIsUploading(false);
       event.target.value = "";
@@ -61,19 +67,20 @@ export function AvatarUploader({ initialAvatar, username }: AvatarUploaderProps)
       <div className="flex items-center gap-4">
         <Image
           src={preview}
-          alt={`Avatar de ${username}`}
+          alt={t("accountMenu.avatarAltNamed").replace("{name}", username)}
           width={96}
           height={96}
+          unoptimized
           className="h-24 w-24 rounded-full border-2 border-white/20 object-cover"
         />
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Foto de perfil</p>
-          <p className="text-sm text-slate-200">Sube una imagen cuadrada para mejores resultados.</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{t("profilePage.avatarUploader.title")}</p>
+          <p className="text-sm text-slate-200">{t("profilePage.avatarUploader.hint")}</p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" onClick={handlePick} loading={isUploading}>
-              Elegir imagen
+              {t("profilePage.avatarUploader.button")}
             </Button>
-            <span className="text-xs uppercase tracking-[0.25em] text-slate-400">Máx. 2 MB</span>
+            <span className="text-xs uppercase tracking-[0.25em] text-slate-400">{t("profilePage.avatarUploader.maxSize")}</span>
           </div>
         </div>
       </div>

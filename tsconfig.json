@@ -22,6 +22,8 @@
         "name": "next"
       }
     ],
+    "baseUrl": "./",
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./src/*"

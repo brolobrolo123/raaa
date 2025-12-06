@@ -6,9 +6,10 @@ const COVER_IMAGE_PATH = /^\/uploads\/covers\/[a-z0-9._-]+$/i;
 export const registerSchema = z.object({
   username: z
     .string()
+    .trim()
     .min(3, "El usuario necesita al menos 3 caracteres.")
     .regex(/^[a-z0-9-]+$/i, "Solo letras, números y guiones."),
-  email: z.string().email("Correo inválido."),
+  email: z.string().trim().email("Correo inválido."),
   password: z
     .string()
     .min(8, "La contraseña debe tener 8 caracteres como mínimo."),
@@ -17,6 +18,7 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   credential: z
     .string()
+    .trim()
     .min(3, "Introduce tu correo o nombre de usuario."),
   password: z.string().min(1, "La contraseña es requerida."),
 });

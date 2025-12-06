@@ -19,6 +19,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Generated Prisma client/runtime – lint noise only.
     "src/generated/**",
+    "scripts/set-role.js",
   ]),
 ]);
 

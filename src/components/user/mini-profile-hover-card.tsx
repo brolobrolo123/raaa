@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useLocale, useTranslations } from "@/lib/i18n/client";
 import { cn } from "@/lib/cn";
 import { DEFAULT_MINI_PROFILE_ACCENT } from "@/lib/mini-profile";
 import type { MiniProfileDTO } from "@/types/profile";
@@ -11,17 +13,27 @@ interface MiniProfileHoverCardProps {
   children: ReactNode;
   className?: string;
   align?: "left" | "right";
+  variant?: "forum" | "battle";
 }
 
 const profileCache = new Map<string, MiniProfileDTO>();
 
-export function MiniProfileHoverCard({ username, children, className, align = "left" }: MiniProfileHoverCardProps) {
+export function MiniProfileHoverCard({
+  username,
+  children,
+  className,
+  align = "left",
+  variant = "forum",
+}: MiniProfileHoverCardProps) {
   const normalizedUsername = username?.trim();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<MiniProfileDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [portalElement, setPortalElement] = useState<HTMLDivElement | null>(null);
+  const [portalStyle, setPortalStyle] = useState<{ top: number; left?: number; right?: number }>({ top: 0 });
 
   const clearTimer = () => {
     if (timer.current) {
@@ -85,7 +97,45 @@ export function MiniProfileHoverCard({ username, children, className, align = "l
 
   useEffect(() => () => clearTimer(), []);
 
-  const alignmentClass = align === "right" ? "right-0" : "left-0";
+  const updatePortalPosition = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    const top = rect.bottom + 12;
+    setPortalStyle({
+      top,
+      ...(align === "right"
+        ? { right: window.innerWidth - rect.right }:
+        { left: rect.left }),
+    });
+  }, [align]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+    const el = document.createElement("div");
+    el.setAttribute("data-mini-profile-portal", "true");
+    document.body.appendChild(el);
+    setPortalElement(el);
+    return () => {
+      document.body.removeChild(el);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    updatePortalPosition();
+    window.addEventListener("resize", updatePortalPosition);
+    window.addEventListener("scroll", updatePortalPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePortalPosition);
+      window.removeEventListener("scroll", updatePortalPosition, true);
+    };
+  }, [open, updatePortalPosition]);
 
   return (
     <span
@@ -94,24 +144,29 @@ export function MiniProfileHoverCard({ username, children, className, align = "l
       onMouseLeave={handleClose}
       onFocus={handleOpen}
       onBlur={handleClose}
+      ref={triggerRef}
     >
       {children}
-      {open && (
-        <div
-          className={cn(
-            "absolute z-50 mt-3 w-80 max-w-sm rounded-3xl border p-4 text-white shadow-2xl backdrop-blur",
-            alignmentClass,
-          )}
-          style={{
-            borderColor: `${(data?.accentColor ?? DEFAULT_MINI_PROFILE_ACCENT)}33`,
-            background: `linear-gradient(150deg, ${(data?.accentColor ?? DEFAULT_MINI_PROFILE_ACCENT)}ee, rgba(2,6,23,0.95))`,
-          }}
-          onMouseEnter={handleOpen}
-          onMouseLeave={handleClose}
-        >
-          <MiniProfileCard data={data} loading={loading} error={error} />
-        </div>
-      )}
+      {portalElement && open
+        ? createPortal(
+            <div
+              className="z-[10000] rounded-3xl border p-4 text-white shadow-2xl backdrop-blur"
+              style={{
+                position: "fixed",
+                top: portalStyle.top,
+                left: portalStyle.left,
+                right: portalStyle.right,
+                borderColor: `${(data?.accentColor ?? DEFAULT_MINI_PROFILE_ACCENT)}33`,
+                background: `linear-gradient(150deg, ${(data?.accentColor ?? DEFAULT_MINI_PROFILE_ACCENT)}ee, rgba(2,6,23,0.95))`,
+              }}
+              onMouseEnter={handleOpen}
+              onMouseLeave={handleClose}
+            >
+              <MiniProfileCard data={data} loading={loading} error={error} variant={variant} />
+            </div>,
+            portalElement,
+          )
+        : null}
     </span>
   );
 }
@@ -120,9 +175,16 @@ interface MiniProfileCardProps {
   data: MiniProfileDTO | null;
   loading: boolean;
   error: string | null;
+  variant: "forum" | "battle";
 }
 
-function MiniProfileCard({ data, loading, error }: MiniProfileCardProps) {
+function MiniProfileCard({ data, loading, error, variant }: MiniProfileCardProps) {
+  const locale = useLocale();
+  const t = useTranslations();
+  const numberFormatter = useMemo(
+    () => new Intl.NumberFormat(locale === "es" ? "es-ES" : "en-US"),
+    [locale],
+  );
   if (loading) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -142,7 +204,73 @@ function MiniProfileCard({ data, loading, error }: MiniProfileCardProps) {
   }
 
   const relativeLastSeen = formatRelativeTime(data.lastSeenAt);
-  const joinedLabel = new Intl.DateTimeFormat("es-ES", { dateStyle: "medium" }).format(new Date(data.joinedAt));
+  const joinedLabel = new Intl.DateTimeFormat(locale === "es" ? "es-ES" : "en-US", { dateStyle: "medium" }).format(
+    new Date(data.joinedAt),
+  );
+
+  const battleStats = data.battleStats;
+  const formattedBattleTotal = numberFormatter.format(battleStats?.total ?? 0);
+  const formattedBattleWins = numberFormatter.format(battleStats?.wins ?? 0);
+  const formattedBattleLosses = numberFormatter.format(battleStats?.losses ?? 0);
+  const formattedArticles = numberFormatter.format(data.stats.articles);
+  const formattedVotes = numberFormatter.format(data.stats.votes);
+
+  const forumStatsSection = (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+          {t("profilePage.miniProfileForumStats.totalPosts")}
+        </p>
+        <p className="text-3xl font-semibold text-white">{formattedArticles}</p>
+        <div className="mt-3 text-[11px] uppercase tracking-[0.2em] text-white/70">
+          <span>{t("profilePage.miniProfileForumStats.votes")}</span>
+          <p className="text-2xl font-semibold text-amber-100">{formattedVotes}</p>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+          {t("profilePage.miniProfileForumStats.topArticleHeading")}
+        </p>
+        {data.topArticle ? (
+          <>
+            <p className="font-semibold text-white">{data.topArticle.title}</p>
+            <p className="text-xs text-slate-400">
+              {numberFormatter.format(data.topArticle.score)} {t("common.votes")}
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">{t("profilePage.miniProfileForumStats.topArticleEmpty")}</p>
+        )}
+      </div>
+    </div>
+  );
+
+  const battleStatsSection = (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+          {t("profilePage.miniProfileBattleStats.total")}
+        </p>
+        <p className="text-3xl font-semibold text-white">{formattedBattleTotal}</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] uppercase tracking-[0.2em] text-white/70">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-2">
+            <p className="text-[10px] text-white/70">{t("profilePage.miniProfileBattleStats.wins")}</p>
+            <p className="text-2xl font-semibold text-emerald-200">{formattedBattleWins}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-2">
+            <p className="text-[10px] text-white/70">{t("profilePage.miniProfileBattleStats.losses")}</p>
+            <p className="text-2xl font-semibold text-rose-200">{formattedBattleLosses}</p>
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+          {t("profilePage.miniProfileBattleStats.clubHeading")}
+        </p>
+        <p className="text-sm text-slate-300">{t("profilePage.miniProfileBattleStats.clubPlaceholder")}</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -155,34 +283,13 @@ function MiniProfileCard({ data, loading, error }: MiniProfileCardProps) {
         </div>
       </div>
       {data.bio && <p className="text-sm text-white/80">{data.bio}</p>}
-      <div className="flex gap-4 text-xs text-slate-300">
-        <span className="flex flex-col">
-          <strong className="text-lg text-white">{data.stats.articles}</strong>
-          <span>Artículos</span>
-        </span>
-        <span className="flex flex-col">
-          <strong className="text-lg text-white">{data.stats.comments}</strong>
-          <span>Comentarios</span>
-        </span>
-      </div>
-      {data.topArticle && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Lo más votado</p>
-          <p className="font-semibold text-white">{data.topArticle.title}</p>
-          <p className="text-xs text-slate-400">{data.topArticle.score} votos</p>
-        </div>
-      )}
-      {data.latestComment && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Último comentario</p>
-          <p className="text-white/90">{truncateText(data.latestComment.body, 140)}</p>
-          <p className="mt-2 text-xs text-slate-400">En {data.latestComment.articleTitle}</p>
-        </div>
-      )}
+      {variant === "battle" ? battleStatsSection : forumStatsSection}
       <div>
-        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Placas</p>
+        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+          {t("profilePage.miniProfileBadgesTitle")}
+        </p>
         {data.badges.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500">Sin placas destacadas todavía.</p>
+          <p className="mt-2 text-xs text-slate-500">{t("profilePage.miniProfileBadgesEmpty")}</p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-2">
             {data.badges.map((badge) => (
@@ -225,10 +332,3 @@ function formatRelativeTime(input: string) {
   return new Intl.DateTimeFormat("es-ES", { dateStyle: "medium" }).format(date);
 }
 
-function truncateText(text: string, limit: number) {
-  const normalized = text.trim();
-  if (normalized.length <= limit) {
-    return normalized;
-  }
-  return `${normalized.slice(0, limit)}…`;
-}

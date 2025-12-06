@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { articleSchema } from "@/lib/validators";
 import { requireUser } from "@/lib/session";
 import { sanitizeHtml } from "@/lib/sanitizer";
-import type { SectionSlug } from "@/lib/sections";
+import { SECTION_DEFINITIONS, type SectionSlug } from "@/lib/sections";
+import { ensureModeratorRequestOnActivity } from "@/lib/moderation";
 
 export async function POST(request: Request) {
   const session = await requireUser();
@@ -18,14 +19,22 @@ export async function POST(request: Request) {
   }
 
   const slug = parsed.data.section as SectionSlug;
-  const section = await prisma.section.findFirst({
-    where: { slug },
-    select: { id: true },
-  });
-
-  if (!section) {
+  const definition = SECTION_DEFINITIONS[slug];
+  if (!definition) {
     return NextResponse.json({ error: "Sección no encontrada" }, { status: 404 });
   }
+
+  const section = await prisma.section.upsert({
+    where: { slug },
+    update: {},
+    create: {
+      slug,
+      name: definition.name.es,
+      description: definition.description.es,
+      accentColor: definition.accentColor,
+    },
+    select: { id: true },
+  });
 
   const authoredCount = await prisma.article.count({ where: { authorId: session.user.id } });
   if (authoredCount >= 100) {
@@ -46,6 +55,8 @@ export async function POST(request: Request) {
     },
     select: { id: true },
   });
+
+  await ensureModeratorRequestOnActivity(session.user.id, authoredCount + 1);
 
   return NextResponse.json({ id: article.id }, { status: 201 });
 }

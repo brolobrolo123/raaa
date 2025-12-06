@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslations } from "@/lib/i18n/client";
 
 export function PasswordForm() {
+  const t = useTranslations();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -19,7 +21,7 @@ export function PasswordForm() {
 
     if (newPassword !== confirmPassword) {
       setIsError(true);
-      setMessage("La confirmación no coincide.");
+      setMessage(t("profilePage.passwordForm.mismatch"));
       return;
     }
 
@@ -34,17 +36,17 @@ export function PasswordForm() {
       const data = await response.json().catch(() => null);
       if (!response.ok) {
         setIsError(true);
-        setMessage(typeof data?.error === "string" ? data.error : "No se pudo actualizar la contraseña.");
+        setMessage(typeof data?.error === "string" ? data.error : t("profilePage.passwordForm.error"));
         return;
       }
 
-      setMessage(data?.message ?? "Contraseña actualizada.");
+      setMessage(data?.message ?? t("profilePage.passwordForm.success"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch {
       setIsError(true);
-      setMessage("Error inesperado al actualizar.");
+      setMessage(t("profilePage.passwordForm.error"));
     } finally {
       setIsSubmitting(false);
     }
@@ -53,7 +55,7 @@ export function PasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <label className="text-xs uppercase tracking-[0.3em] text-slate-400">Contraseña actual</label>
+        <label className="text-xs uppercase tracking-[0.3em] text-slate-400">{t("profilePage.passwordForm.currentLabel")}</label>
         <Input
           type="password"
           value={currentPassword}
@@ -62,11 +64,11 @@ export function PasswordForm() {
         />
       </div>
       <div className="space-y-2">
-        <label className="text-xs uppercase tracking-[0.3em] text-slate-400">Nueva contraseña</label>
+        <label className="text-xs uppercase tracking-[0.3em] text-slate-400">{t("profilePage.passwordForm.newLabel")}</label>
         <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
       </div>
       <div className="space-y-2">
-        <label className="text-xs uppercase tracking-[0.3em] text-slate-400">Confirmar nueva contraseña</label>
+        <label className="text-xs uppercase tracking-[0.3em] text-slate-400">{t("profilePage.passwordForm.confirmLabel")}</label>
         <Input
           type="password"
           value={confirmPassword}
@@ -80,7 +82,7 @@ export function PasswordForm() {
         </p>
       )}
       <Button type="submit" loading={isSubmitting} className="w-full">
-        Guardar cambios
+        {t("profilePage.passwordForm.submit")}
       </Button>
     </form>
   );
